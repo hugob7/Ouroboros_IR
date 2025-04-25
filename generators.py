@@ -5,7 +5,6 @@ from torch.nn import init
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.nn import Parameter as P
-#from torchsummary import summary
 from torchinfo import summary
 import torchvision
 from utils import DEVICE
@@ -38,6 +37,7 @@ def tissue_image_generator(input_dim, output_nc, generator_name, ngf, n_downsamp
         print("Generator not implemented")
         exit()
     netG.apply(weights_init)
+    #netG.cuda()
     netG.to(DEVICE)
     return netG
 
@@ -46,112 +46,6 @@ def tissue_image_generator(input_dim, output_nc, generator_name, ngf, n_downsamp
 # Generators
 ##############################################################################
 
-## Pix2Pix Generator
-
-class UNetDown(nn.Module):
-    def __init__(self, in_size, out_size, normalize=True, dropout=0.0):
-        super(UNetDown, self).__init__()
-        layers = [nn.Conv2d(in_size, out_size, 4, 2, 1, bias=False)]
-        if normalize:
-            layers.append(nn.InstanceNorm2d(out_size))
-        layers.append(nn.LeakyReLU(0.2))
-        if dropout:
-            layers.append(nn.Dropout(dropout))
-        self.model = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.model(x)
-
-class UNetUp(nn.Module):
-    def __init__(self, in_size, out_size, dropout=0.0, use_skip=True):
-        super(UNetUp, self).__init__()
-        layers = [
-            nn.ConvTranspose2d(in_size, out_size, 4, 2, 1, bias=False),
-            nn.InstanceNorm2d(out_size),
-            nn.ReLU(inplace=True),
-        ]
-        if dropout:
-            layers.append(nn.Dropout(dropout))
-
-        self.model = nn.Sequential(*layers)
-        self.use_skip = use_skip
-
-    def forward(self, x, skip_input=None):
-        x = self.model(x)
-        if self.use_skip and skip_input is not None:
-            x = torch.cat((x, skip_input), 1)
-        return x
-
-class Pix2PixGenerator(nn.Module):
-    def __init__(self, in_channels=801, out_channels=3):
-        super(Pix2PixGenerator, self).__init__()
-
-        # Spectral processing while maintaining 20x20 spatial dimension
-        self.spectral_processing = nn.Sequential(
-            nn.Conv2d(in_channels, 801, kernel_size=1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(801, 512, kernel_size=1),
-            nn.LeakyReLU(0.2)
-        )
-
-        # Reduce from 20x20 to 16x16
-        self.initial_conv = nn.Conv2d(512, 512, kernel_size=5, stride=1, padding=0)
-
-        # Downsampling: 16x16 -> 8x8 -> 4x4 -> 2x2 -> 1x1
-        self.down1 = UNetDown(512, 512, normalize=False)
-        self.down2 = UNetDown(512, 512, dropout=0.5)
-        self.down3 = UNetDown(512, 512, dropout=0.5)
-        self.down4 = UNetDown(512, 512, normalize=False, dropout=0.5)
-
-        # Bottleneck
-        self.bottleneck = nn.Sequential(
-            nn.Conv2d(512, 512, 1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(512, 512, 1),
-            nn.LeakyReLU(0.2)
-        )
-
-        # Upsampling: 1x1 -> 2x2 -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
-        self.up1 = UNetUp(512, 512, dropout=0.5)
-        self.up2 = UNetUp(1024, 512, dropout=0.5)
-        self.up3 = UNetUp(1024, 512, dropout=0.5)
-        self.up4 = UNetUp(1024, 512, dropout=0.5)
-        self.up5 = UNetUp(1024, 256)
-        self.up6 = UNetUp(256, 128)
-        self.up7 = UNetUp(128, 64)
-
-        # Final upsampling to 256x256
-        self.final = nn.Sequential(
-            nn.Upsample(scale_factor=2),
-            nn.ZeroPad2d((1, 0, 1, 0)),
-            nn.Conv2d(64, out_channels, 4, padding=1),
-            nn.Tanh(),
-        )
-
-    def forward(self, x):
-        # x is 20x20x801
-        x = self.spectral_processing(x)  # 20x20x512
-        x = self.initial_conv(x)  # 16x16x512
-
-        d1 = self.down1(x)  # 8x8x512
-        d2 = self.down2(d1)  # 4x4x512
-        d3 = self.down3(d2)  # 2x2x512
-        d4 = self.down4(d3)  # 1x1x512
-
-        bottleneck = self.bottleneck(d4)  # 1x1x512
-
-        u1 = self.up1(bottleneck, d3)  # 2x2x(512+512)
-        u2 = self.up2(u1, d2)  # 4x4x(512+512)
-        u3 = self.up3(u2, d1)  # 8x8x(512+512)
-        u4 = self.up4(u3, x)  # 16x16x(512+512)
-        u5 = self.up5(u4)  # 32x32x256
-        u6 = self.up6(u5)  # 64x64x128
-        u7 = self.up7(u6)  # 128x128x64
-
-        return self.final(u7)  # 256x256x3
-
-
-###############
 
 class ResidualGenerator(nn.Module):
 
@@ -238,6 +132,140 @@ def DCGan(input_dim):
     layers.append(nn.ReLU(True))
 
     return nn.Sequential(*layers)
+
+
+class UNetDown(nn.Module):
+    def __init__(self, in_size, out_size, normalize=True, dropout=0.0):
+        super(UNetDown, self).__init__()
+        layers = [nn.Conv2d(in_size, out_size, 4, 2, 1, bias=False)]
+        if normalize:
+            layers.append(nn.InstanceNorm2d(out_size))
+        layers.append(nn.LeakyReLU(0.2))
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class UNetUp(nn.Module):
+    def __init__(self, in_size, out_size, dropout=0.0):
+        super(UNetUp, self).__init__()
+        layers = [
+            nn.ConvTranspose2d(in_size, out_size, 4, 2, 1, bias=False),
+            nn.InstanceNorm2d(out_size),
+            nn.ReLU(inplace=True),
+        ]
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x, skip_input):
+        x = self.model(x)
+        x = torch.cat((x, skip_input), 1)
+
+        return x
+    
+
+class Pix2PixGenerator(nn.Module):
+    def __init__(self, in_channels=801, out_channels=3):
+        super(Pix2PixGenerator, self).__init__()
+
+        # Maintaining 20x20 spatial dimensions
+        self.spectral_processing = nn.Sequential(
+            nn.Conv2d(in_channels, 801, kernel_size=1),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(801, 512, kernel_size=1),
+            nn.LeakyReLU(0.2)
+        )
+
+        # 20x20 -> 16x16
+        self.initial_conv = nn.Conv2d(512, 512, kernel_size=5, stride=1, padding=0)
+
+        # 16x16 -> 8x8 -> 4x4 -> 2x2 -> 1x1
+        self.down1 = UNetDown(512, 512, normalize=False)
+        self.down2 = UNetDown(512, 512, dropout=0.5)
+        self.down3 = UNetDown(512, 512, dropout=0.5)
+        self.down4 = UNetDown(512, 512, normalize=False, dropout=0.5)
+
+        self.bottleneck = nn.Sequential(
+            nn.Conv2d(512, 512, 1),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(512, 512, 1),
+            nn.LeakyReLU(0.2)
+        )
+
+        # 1x1 -> 2x2 -> 4x4 -> 8x8 -> 16x16 -> 32x32 -> 64x64 -> 128x128
+        self.up1 = UNetUp(512, 512, dropout=0.5)
+        self.up2 = UNetUp(1024, 512, dropout=0.5)
+        self.up3 = UNetUp(1024, 512, dropout=0.5)
+        self.up4 = UNetUp(1024, 512, dropout=0.5)
+        self.up5 = UNetUp(1024, 256)
+        self.up6 = UNetUp(256, 128)
+        self.up7 = UNetUp(128, 64)
+
+        # Final upsampling to 256x256
+        self.final = nn.Sequential(
+            nn.Upsample(scale_factor=2),
+            nn.ZeroPad2d((1, 0, 1, 0)),
+            nn.Conv2d(64, out_channels, 4, padding=1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x):
+        # x is 20x20x801
+        x = self.spectral_processing(x) 
+        x = self.initial_conv(x)  
+
+        d1 = self.down1(x)  
+        d2 = self.down2(d1)  
+        d3 = self.down3(d2)  
+        d4 = self.down4(d3)  
+
+        bottleneck = self.bottleneck(d4) 
+
+        u1 = self.up1(bottleneck, d3)  
+        u2 = self.up2(u1, d2)  
+        u3 = self.up3(u2, d1)  
+        u4 = self.up4(u3, x)  
+        u5 = self.up5(u4) 
+        u6 = self.up6(u5) 
+        u7 = self.up7(u6)  
+
+        # 256x256x3
+        return self.final(u7) 
+    
+
+def pix2pix_generator(in_channels=801):
+    netG = Pix2PixGenerator(in_channels=in_channels)
+    # assert (torch.cuda.is_available())
+    # netG.cuda()
+    netG.apply(weights_init)
+    return netG
+
+
+class SpectralAttention(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.query = nn.Conv2d(in_channels, in_channels // 8, 1)
+        self.key = nn.Conv2d(in_channels, in_channels // 8, 1)
+        self.value = nn.Conv2d(in_channels, in_channels, 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        
+    def forward(self, x):
+        batch, c, h, w = x.size()
+        
+        q = self.query(x).view(batch, -1, h * w).permute(0, 2, 1)
+        k = self.key(x).view(batch, -1, h * w)  
+        v = self.value(x).view(batch, -1, h * w)  
+        
+        attention = F.softmax(torch.bmm(q, k), dim=2)  
+        out = torch.bmm(v, attention.permute(0, 2, 1))  
+        out = out.view(batch, c, h, w)
+        
+        return self.gamma * out + x
 
 
 class GBlock(nn.Module):
@@ -371,7 +399,7 @@ class BigGanGenerator(nn.Module):
                                           which_linear=bn_linear,
                                           cross_replica=self.cross_replica,
                                           mybn=self.mybn,
-                                          input_size=(self.shared_dim + 801 if self.G_shared
+                                          input_size=(self.shared_dim + self.dim_z if self.G_shared
                                                       else self.n_classes),
                                           norm_style=self.norm_style,
                                           eps=self.BN_eps)
@@ -416,6 +444,28 @@ class BigGanGenerator(nn.Module):
                                                     mybn=self.mybn),
                                           self.activation,
                                           self.which_conv(self.arch['out_channels'][-1], 3))
+        
+        #self.channel_adapter = nn.Conv2d(801, 512, kernel_size=1)
+        self.channel_adapter = nn.Sequential(
+            nn.Conv2d(801, 1024, kernel_size=1), 
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(1024, 512, kernel_size=1)
+        )
+
+        self.channel_adapter_residual = nn.Sequential(
+            nn.Conv2d(801, 512, kernel_size=1), 
+            nn.LeakyReLU(0.2)
+        )
+
+        self.spectral_encoder = nn.Sequential(
+            nn.Linear(801, 1024),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.2),
+            nn.Linear(1024, 801),
+            nn.LeakyReLU(0.2)
+        )
+
+        self.spectral_attention = SpectralAttention(512)
 
         # Initialize weights. Optionally skip init for testing.
         if not skip_init:
@@ -459,27 +509,26 @@ class BigGanGenerator(nn.Module):
                 self.param_count += sum([p.data.nelement() for p in module.parameters()])
         print('Param count for G''s initialized parameters: %d' % self.param_count)
 
-    # Note on this forward function: we pass in a y vector which has
-    # already been passed through G.shared to enable easy class-wise
-    # interpolation later. If we passed in the one-hot and then ran it through
-    # G.shared in this forward function, it would be harder to handle.
-    # NOTE: The z vs y dichotomy here is for compatibility with not-y
-    def forward(self, y):
-        z = torch.randn(y.shape[0], self.dim_z, requires_grad=False).to(DEVICE)
-        # y = y.permute(0,2,3,1)
+    
+    # Integrate 20x20x801 IR spectra data at correct layer
+    def forward(self, ir_data):
+        # 801d conditioning spectra vector
+        y = F.adaptive_avg_pool2d(ir_data, 1).view(ir_data.size(0), -1)
+        y = self.spectral_encoder(y)
+        
+        # 20x20 -> 16x16
+        h = F.interpolate(ir_data, size=(16, 16), mode='bilinear', align_corners=False)
+        
+        #h = self.channel_adapter(h)
 
-        # If hierarchical, concatenate zs and ys
-        if self.hier:
-            z = torch.cat([y, z], 1)
-            y = z
-
-        # First linear layer
-        h = self.linear(z)
-        h = h.view(h.size(0), -1, self.bottom_width, self.bottom_width)
-        for index, blocklist in enumerate(self.blocks):
-            for block in blocklist:
+        h_main = self.channel_adapter(h)
+        h_residual = self.channel_adapter_residual(h) 
+        h = h_main + h_residual  
+        h = self.spectral_attention(h)
+        
+        for index in range(4, len(self.blocks)):
+            for block in self.blocks[index]:
                 h = block(h, y)
-
+        
         output = torch.tanh(self.output_layer(h))
         return output
-    

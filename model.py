@@ -1,13 +1,6 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.checkpoint
-import torch.nn.functional as F
-
 from generators import tissue_image_generator
-#from resnet import ResNet
 from utils import DEVICE
-
 
 class GenerativeModel(nn.Module):
     def __init__(self, mode='train',

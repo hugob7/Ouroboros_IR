@@ -1,76 +1,11 @@
+import biggan_layers
+import functools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import biggan_layers
-import functools
-from torch.nn import init
 import torch.optim as optim
-from layers import GlobalAvgPool, Flatten, get_activation, build_cnn
-
-from torch.nn.utils import spectral_norm
-
-
-# Pix2Pix discriminator (PatchGAN) with minibatch discrimination to try to prevent mode collapse
-class Pix2PixDiscriminator(nn.Module):
-    def __init__(self, in_channels=3):
-        super(Pix2PixDiscriminator, self).__init__()
-
-        def discriminator_block(in_filters, out_filters, stride=2, normalization=True):
-            """Returns downsampling layers of each discriminator block"""
-            layers = [nn.Conv2d(in_filters, out_filters, 4, stride=stride, padding=1)]
-            if normalization:
-                layers.append(nn.InstanceNorm2d(out_filters))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
-            return layers
-
-        self.model = nn.Sequential(
-            *discriminator_block(in_channels, 64, normalization=False),
-            *discriminator_block(64, 128),
-            *discriminator_block(128, 256),
-            *discriminator_block(256, 512, stride=1),
-            #nn.Conv2d(512, 1, 4, stride=1, padding=1, bias=False),
-        )
-
-        self.minibatch_discrimination = MinibatchDiscrimination(512, 32, 16)
-
-        self.final_conv = nn.Conv2d(512 + 32, 1, 4, stride=1, padding=1, bias=False)
-
-    def forward(self, img):
-        features = self.model(img)
-        minibatch_output = self.minibatch_discrimination(features)
-        output = self.final_conv(minibatch_output)
-        #output = self.model(img)
-        return output
-    
-class MinibatchDiscrimination(nn.Module):
-    def __init__(self, in_channels, out_features, kernel_dims):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_features = out_features
-        self.kernel_dims = kernel_dims
-
-        self.T = nn.Parameter(torch.Tensor(in_channels, out_features, kernel_dims))
-        nn.init.normal_(self.T, 0, 1)
-
-    def forward(self, x):
-        N, C, H, W = x.size()
-        
-        pooled = F.adaptive_avg_pool2d(x, (1, 1)).view(N, C)
-        
-        matrices = pooled.mm(self.T.view(self.in_channels, -1))
-        matrices = matrices.view(N, self.out_features, self.kernel_dims)
-
-        M = matrices.unsqueeze(0)  # 1xNxBxC
-        M_T = M.permute(1, 0, 2, 3)  # Nx1xBxC
-        norm = torch.abs(M - M_T).sum(3)  # NxNxB
-        
-        expnorm = torch.exp(-norm)
-        
-        o_b = (expnorm.sum(0) - 1)  # NxB
-
-        o_b = o_b.view(N, self.out_features, 1, 1).expand(N, self.out_features, H, W)
-        
-        return torch.cat([x, o_b], 1)
+from layers import build_cnn
+from torch.nn import init
 
 
 class PatchDiscriminator(nn.Module):
@@ -97,6 +32,65 @@ class PatchDiscriminator(nn.Module):
     if layout is not None:
       x = torch.cat([x, layout], dim=1)
     return self.cnn(x)
+
+
+class Pix2PixDiscriminator(nn.Module):
+    def __init__(self, in_channels=3):
+        super(Pix2PixDiscriminator, self).__init__()
+
+        def discriminator_block(in_filters, out_filters, stride=2, normalization=True):
+            """Returns downsampling layers of each discriminator block"""
+            layers = [nn.Conv2d(in_filters, out_filters, 4, stride=stride, padding=1)]
+            if normalization:
+                layers.append(nn.InstanceNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
+
+        self.model = nn.Sequential(
+            *discriminator_block(in_channels, 64, normalization=False),
+            *discriminator_block(64, 128),
+            *discriminator_block(128, 256),
+            *discriminator_block(256, 512, stride=1),
+            nn.Conv2d(512, 1, 4, stride=1, padding=1, bias=False),
+        )
+
+        self.minibatch_discrimination = MinibatchDiscrimination(512, 32, 16)
+        self.final_conv = nn.Conv2d(512 + 32, 1, 4, stride=1, padding=1, bias=False)
+
+    def forward(self, img):
+        features = self.model(img)
+        minibatch_output = self.minibatch_discrimination(features)
+        output = self.final_conv(minibatch_output)
+        #output = self.model(img)
+        return output
+    
+
+class MinibatchDiscrimination(nn.Module):
+    def __init__(self, in_channels, out_features, kernel_dims):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_features = out_features
+        self.kernel_dims = kernel_dims
+
+        self.T = nn.Parameter(torch.Tensor(in_channels, out_features, kernel_dims))
+        nn.init.normal_(self.T, 0, 1)
+
+    def forward(self, x):
+        N, C, H, W = x.size()
+    
+        pooled = F.adaptive_avg_pool2d(x, (1, 1)).view(N, C)
+        matrices = pooled.mm(self.T.view(self.in_channels, -1))
+        matrices = matrices.view(N, self.out_features, self.kernel_dims)
+
+        M = matrices.unsqueeze(0) 
+        M_T = M.permute(1, 0, 2, 3)  
+        norm = torch.abs(M - M_T).sum(3)  
+        expnorm = torch.exp(-norm)
+
+        o_b = (expnorm.sum(0) - 1) 
+        o_b = o_b.view(N, self.out_features, 1, 1).expand(N, self.out_features, H, W)
+        
+        return torch.cat([x, o_b], 1)
     
 
 class DBlock(nn.Module):
@@ -233,8 +227,25 @@ class BigGanDiscriminator(nn.Module):
 
     self.linear = self.which_linear(self.arch['out_channels'][-1], output_dim)
 
-    self.discrim_prediction = self.which_linear(self.arch['out_channels'][-1], 801)
+    self.spatial_attention = nn.Sequential(
+      nn.Conv2d(self.arch['out_channels'][-1], 64, kernel_size=3, padding=1),
+      nn.LeakyReLU(0.2),
+      nn.Conv2d(64, 1, kernel_size=1),
+      nn.Sigmoid()
+    )
 
+    self.discrim_prediction = nn.Sequential(
+      nn.Linear(self.arch['out_channels'][-1], 1024),
+      nn.LeakyReLU(0.2),
+      nn.Dropout(0.3),
+      nn.Linear(1024, 1024),
+      nn.LeakyReLU(0.2),
+      nn.Dropout(0.3),
+      nn.Linear(1024, 1024),
+      nn.LeakyReLU(0.2),
+      nn.Linear(1024, 801)
+    )
+    
     # Embedding for projection discrimination
     self.embed = self.which_embedding(self.n_classes, self.arch['out_channels'][-1])
 
@@ -275,23 +286,21 @@ class BigGanDiscriminator(nn.Module):
     print('Param count for D''s initialized parameters: %d' % self.param_count)
 
   def forward(self, x, y=None):
-    # Run input conv
     h = self.input_conv(x)
-    # Loop over blocks
+
     for index, blocklist in enumerate(self.blocks):
-      for block in blocklist:
-        h = block(h)
-
-    # Apply global sum pooling as in SN-GAN
-    h = torch.sum(self.activation(h), [2, 3])
-
-    # Get initial class-unconditional output
-    out = self.linear(h)
-
-    prediction = self.discrim_prediction(h)
-
-    # Get projection of final featureset onto class vectors and add to evidence
-    # out = out #+ torch.sum(self.linear_biomarkersvec(y) * h, 1, keepdim=True) #Srijay changes here
+        for block in blocklist:
+            h = block(h)
+    
+    attention_weights = self.spatial_attention(h)
+    
+    h_weighted = h * attention_weights
+    h_pooled_weighted = torch.sum(self.activation(h_weighted), [2, 3])
+    
+    h_pooled = torch.sum(self.activation(h), [2, 3])
+    out = self.linear(h_pooled)
+    
+    prediction = self.discrim_prediction(h_pooled_weighted)
+    
     return out, prediction
-
-
+  

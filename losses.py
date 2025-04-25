@@ -1,51 +1,41 @@
 import torch
-import torch.nn.functional as F
 
-
-def smooth_positive_labels(x, smoothing=0.2):
-    return torch.full_like(x, 1.0 - smoothing) + smoothing * torch.rand_like(x)
 
 def get_gan_losses(gan_type):
-  if gan_type == 'gan':
-    return gan_g_loss, gan_d_loss
-  else:
-    raise ValueError('Improper GAN type "%s"' % gan_type)
+    if gan_type == 'gan':
+        return gan_g_loss, gan_d_loss
+    else:
+        raise ValueError('Improper GAN type "%s"' % gan_type)
+
 
 def bce_loss(input, target):
     neg_abs = -input.abs()
     loss = input.clamp(min=0) - input * target + (1 + neg_abs.exp()).log()
     return loss.mean()
 
+
 def _make_targets(x, y):
-  return torch.full_like(x, y)
+    return torch.full_like(x, y)
+
 
 def gan_g_loss(scores_fake):
-  if scores_fake.dim() > 1:
-    scores_fake = scores_fake.view(-1)
-  y_fake = _make_targets(scores_fake, 1)
-  return bce_loss(scores_fake, y_fake)
+    if scores_fake.dim() > 1:
+        scores_fake = scores_fake.view(-1)
+    y_fake = _make_targets(scores_fake, 1)
+    return bce_loss(scores_fake, y_fake)
 
 
 def gan_d_loss(scores_real, scores_fake):
-  assert scores_real.size() == scores_fake.size()
-  if scores_real.dim() > 1:
-    scores_real = scores_real.view(-1)
-    scores_fake = scores_fake.view(-1)
-  y_real = _make_targets(scores_real, 1)
-  y_fake = _make_targets(scores_fake, 0)
-  loss_real = bce_loss(scores_real, y_real)
-  loss_fake = bce_loss(scores_fake, y_fake)
-  return loss_real + loss_fake
+    assert scores_real.size() == scores_fake.size()
+    if scores_real.dim() > 1:
+        scores_real = scores_real.view(-1)
+        scores_fake = scores_fake.view(-1)
+    y_real = _make_targets(scores_real, 1)
+    y_fake = _make_targets(scores_fake, 0)
+    loss_real = bce_loss(scores_real, y_real)
+    loss_fake = bce_loss(scores_fake, y_fake)
+    return loss_real + loss_fake
 
 
-# Extra test
-def structure_consistency_loss(generated, target):
-    def gradient(x):
-        h_x = x[:, :, 1:, :] - x[:, :, :-1, :]
-        w_x = x[:, :, :, 1:] - x[:, :, :, :-1]
-        return h_x, w_x
-
-    gen_grad_h, gen_grad_w = gradient(generated)
-    tar_grad_h, tar_grad_w = gradient(target)
-
-    return F.l1_loss(gen_grad_h, tar_grad_h) + F.l1_loss(gen_grad_w, tar_grad_w)
+def smooth_positive_labels(x, smoothing=0.2):
+    return torch.full_like(x, 1.0 - smoothing) + smoothing * torch.rand_like(x)

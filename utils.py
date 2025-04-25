@@ -5,23 +5,12 @@ import torch
 import subprocess
 from contextlib import contextmanager
 import imageio as io
-from PIL import Image, ImageOps
-import matplotlib
+from PIL import Image
 import matplotlib.pyplot as plt
-
-import random
-import shutil
-from collections import OrderedDict
-
-import numpy as np
-import torch
-import torch.nn as nn
 from termcolor import colored
-from torch.autograd import Variable
 
 
-DEVICE = 'mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu'
-
+DEVICE = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
 def convert_pytorch_checkpoint(net_state_dict):
     variable_name_list = list(net_state_dict.keys())
@@ -111,7 +100,7 @@ def lineno():
 
 def get_gpu_memory():
   #torch.cuda.synchronize()
-  torch.cuda.synchronize() if DEVICE == 'cuda' else torch.mps.synchronize() if DEVICE == 'mps' else None
+  torch.cuda.synchronize() if DEVICE == "cuda" else torch.mps.synchronize() if DEVICE == "mps" else None
   opts = [
       'nvidia-smi', '-q', '--gpu=' + str(0), '|', 'grep', '"Used GPU Memory"'
   ]
@@ -138,4 +127,3 @@ class LossManager(object):
 
   def items(self):
     return self.all_losses.items()
-  

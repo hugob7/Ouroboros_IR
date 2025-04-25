@@ -1,43 +1,22 @@
-import glob
-import os
-import pandas as pd
-import sys
 import numpy as np
-import torch
+import os
 import torchvision.transforms as T
-from PIL import Image, ImageDraw
-from scipy.spatial import distance
+from PIL import Image
 from torch.utils.data import Dataset
-from sklearn.model_selection import train_test_split
-import tifffile
-import configparser
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-from combat.pycombat import pycombat
-from utils import DEVICE
-import joblib
-from sklearn.preprocessing import MinMaxScaler
-import seaborn as sns
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 
 
-# IR Dataset class currently using full IR patch data 20x20x801
-# Can be modified to work with 801d vector or 15d vector from PCA too
 class IRDataset(Dataset):
-    def __init__(self, base_dir, mode):
-        super(Dataset, self).__init__()
+    def __init__(self, base_dir, mode, sample='D'):
+        super().__init__()
         self.base_dir = base_dir
         self.mode = mode
-        self.samples = ['A', 'B', 'C', 'D']
-
-        if self.mode == 'train':
-            self.samples = self.samples[:3]  # Training: A, B, C
-        else:
-            self.samples = self.samples[3:]  # Testing: D
+        self.sample = sample
         
+        print(f"Initialising {self.mode} dataset for sample {self.sample}")
         self.data_pairs = self._load_data_pairs()
-
+        
+        #print(f"{self.mode.capitalize()} set: Using {len(self.data_pairs)} patches from sample {self.sample}")
+        
     def __len__(self):
         return len(self.data_pairs)
     
@@ -51,35 +30,37 @@ class IRDataset(Dataset):
         transform = T.Compose([T.ToTensor()])
         hne_image = transform(hne_image)
         
-        # Load corresponding IR patch data (20x20x801, already min-max normalised)
+        # Load IR data 20x20x801
         ir_spectra = np.load(ir_path)
-        ir_spectra = np.transpose(ir_spectra, (2, 0, 1)) # reshape 801x20x20
-
-        #print(ir_spectra.shape)
+        ir_spectra = np.transpose(ir_spectra, (2, 0, 1))  # reshape to 801x20x20
         
         # Sample & location (unique patch id)
         image_name = os.path.basename(hne_path)
         patch_id = image_name[0:-8]
         
         return patch_id, ir_spectra, hne_image
-    
+
+    # Example patch unique id: C_51x91; Example filename: C_51x91_HNE.png
     def _load_data_pairs(self):
         data_pairs = []
-        for sample in self.samples:
-            hne_dir = os.path.join(self.base_dir, sample, 'hne_patches_new')
-            ir_dir = os.path.join(self.base_dir, sample, 'ir_data_full_normalised')
+        
+        sample_dir = os.path.join(self.base_dir, self.sample)
+        mode_dir = os.path.join(sample_dir, self.mode)
+        
+        ir_data_dir = os.path.join(mode_dir, "standardised", "ir_data")        
+        hne_patches_dir = os.path.join(mode_dir, "hne_patches")
+                
+        hne_files = [f for f in os.listdir(hne_patches_dir) if f.endswith("_HNE.png")]
+        
+        for hne_file in hne_files:
+            base_name = hne_file.replace("_HNE.png", '')
+            ir_file = f"{base_name}_IR.npy"
+            ir_path = os.path.join(ir_data_dir, ir_file)
             
-            for hne_file in os.listdir(hne_dir):
-                if hne_file.endswith('_HNE.png'):
-                    base_name = hne_file.replace('_HNE.png', '')
-                    ir_file = f'{base_name}_IR_full.npy'
-                    if os.path.exists(os.path.join(ir_dir, ir_file)):
-                        data_pairs.append((
-                            os.path.join(hne_dir, hne_file),
-                            os.path.join(ir_dir, ir_file)
-                        ))
+            data_pairs.append((os.path.join(hne_patches_dir, hne_file), ir_path))
+        
         return data_pairs
 
-    def _read_image(self,image_path):
+    def _read_image(self, image_path):
         image = Image.open(image_path)
         return np.asarray(image)

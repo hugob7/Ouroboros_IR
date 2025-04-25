@@ -1,10 +1,7 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import functools
 from torch.nn.functional import interpolate
 from torch.nn.utils import spectral_norm
-
 
 def get_normalization_2d(channels, normalization):
   if normalization == 'instance':
