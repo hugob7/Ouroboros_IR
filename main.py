@@ -522,7 +522,7 @@ def main(args):
             draw_curve(epoch_list, monitor_epoch_losses[k], k)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("CONTROL")
     args = parser.parse_args()
     main(args)

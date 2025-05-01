@@ -23,7 +23,7 @@ def calculate_noise_fid(dataloader):
 
 
 if __name__ == "__main__":
-    base_dir = "/Users/hugoboland/cs310_project2/patches_derivative1"
+    base_dir = "./data/patches"
     test_dataset = IRDataset(base_dir, mode="test")
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     

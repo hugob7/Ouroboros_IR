@@ -1,8 +1,3 @@
-# BASE_DIR = "/Users/hugoboland/Downloads/krupakar_clustering"
-# IMAGES_DIR = "/Users/hugoboland/cs310_project2/SpecTX/Srijay/images"
-# EXTRACTED_PATCHES_DIR = "/Users/hugoboland/cs310_project2/patches_derivative1"
-# PROTEIN_EXPRESSIONS_CSV = "/Users/hugoboland/cs310_project2/protein_expressions_spotlevel.csv"
-
 BASE_DIR = "../data"
 IMAGES_DIR = "../data/images"
 EXTRACTED_PATCHES_DIR = "../data/patches"

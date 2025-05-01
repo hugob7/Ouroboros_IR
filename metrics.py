@@ -14,7 +14,7 @@ def inception_get_features(inception, images):
         batch = images[i: i+batch_size].to(DEVICE)
 
         if batch.shape[2] != 299 or batch.shape[3] != 299:
-            batch = torch.nn.functional.interpolate(batch, size=(299, 299), mode='bilinear', align_corners=False)
+            batch = torch.nn.functional.interpolate(batch, size=(299, 299), mode="bilinear", align_corners=False)
 
         with torch.no_grad():
             feat = inception(batch)
@@ -57,8 +57,8 @@ def save_spectra_comparison(target_spectra, predicted_spectra, output_path, pear
     
     plt.plot(x, target_spectra, label="Target Spectra", alpha=0.7)
     plt.plot(x, predicted_spectra, label="Predicted Spectra", alpha=0.7)
-    plt.xlabel('Wavenumber Index')
-    plt.ylabel('Intensity')
+    plt.xlabel("Wavenumber Index")
+    plt.ylabel("Intensity")
     plt.title(title)
     plt.legend()
     plt.tight_layout()
